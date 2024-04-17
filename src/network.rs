@@ -1,6 +1,7 @@
 //! impl of neural network
 
 use rand::{rngs::ThreadRng, Rng};
+// use rayon::prelude::*;
 
 use crate::{
     common::{Float, IMG_RESOLUTION},
@@ -104,6 +105,7 @@ impl Network {
                 // 4. update params
                 for (i, layer) in self.layers.iter_mut().enumerate() {
                     for (j, neuron) in layer.neurons.iter_mut().enumerate() {
+                        // update weights
                         for (k, weight) in neuron.weights.iter_mut().enumerate() {
                             let dw = if i == 1 {
                                 // output layer dw
@@ -114,6 +116,7 @@ impl Network {
                             };
                             *weight -= alpha * dw;
                         }
+                        // update bias
                         neuron.bias -= alpha * dz[i][j];
                     }
                 }
@@ -172,17 +175,28 @@ impl Neuron {
         for w in weights.iter_mut() {
             *w = rng.gen();
         }
-        Neuron { bias: 0.0, weights }
+        Neuron {
+            bias: rng.gen(),
+            weights,
+        }
     }
 
     fn z(&self, inputs: &[Float]) -> Float {
         debug_assert_eq!(self.weights.len(), inputs.len());
         // dot multiply
-        let mut wx = 0.0;
-        for (w, x) in self.weights.iter().zip(inputs.iter()) {
-            wx += w * x;
-        }
-
+        // let mut wx = 0.0;
+        // let wx: Float = self
+        //     .weights
+        //     .par_iter()
+        //     .zip(inputs.par_iter())
+        //     .map(|(w, x)| w * x)
+        //     .sum();
+        let wx: Float = self
+            .weights
+            .iter()
+            .zip(inputs.iter())
+            .map(|(w, x)| w * x)
+            .sum();
         wx + self.bias
     }
 }
@@ -197,7 +211,7 @@ fn sigmoid_derivative(x: Float) -> Float {
 
 ///
 /// 10 outputs neurons mapping to 10 digits
-/// max possibility wins
+/// highest possibility wins
 /// which means: max idx [0-9] is my guess
 ///
 fn the_num_is(outputs: &[f32]) -> u8 {
@@ -213,4 +227,70 @@ fn the_num_is(outputs: &[f32]) -> u8 {
     }
 
     max_idx
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::{thread_rng, Rng};
+    use std::{
+        sync::{Arc, Mutex},
+        thread::{self},
+    };
+
+    const N_THREAD: usize = 8;
+    const N: usize = N_THREAD * 1_000_000;
+
+    fn gen_param() -> (Vec<f64>, Vec<f64>) {
+        let mut rng = thread_rng();
+        let mut weights: Vec<f64> = Vec::with_capacity(N);
+        let mut inputs: Vec<f64> = Vec::with_capacity(N);
+
+        for _ in 0..N {
+            weights.push(rng.gen());
+            inputs.push(rng.gen());
+        }
+
+        (weights, inputs)
+    }
+
+    #[test]
+    fn single_thread() {
+        let (ws, is) = gen_param();
+        let a: f64 = ws.iter().zip(is.iter()).map(|(w, i)| w * i).sum();
+        dbg!(&a);
+        assert!(a > 0.0 && a < N as f64);
+    }
+
+    ///
+    /// Most of time spent on `gen_param`, so, the two versions are equally fast
+    ///
+    #[test]
+    fn multiple_thread() {
+        let (ws, is) = gen_param();
+        let mut wr = vec![];
+        let mut ir = vec![];
+        for i in 0..N_THREAD {
+            let step = N / N_THREAD;
+            let start = i * step;
+            let end = (i + 1) * step;
+            wr.push(&ws[start..end]);
+            ir.push(&is[start..end]);
+        }
+
+        let results = Arc::new(Mutex::new([0.0; N_THREAD]));
+        thread::scope(|scope| {
+            for j in 0..N_THREAD {
+                let w = &wr[j];
+                let i = &ir[j];
+                let r = results.clone();
+                scope.spawn(move || {
+                    let a: f64 = w.iter().zip(i.iter()).map(|(w, i)| w * i).sum();
+                    r.lock().unwrap()[j] = a;
+                });
+            }
+        });
+        dbg!(&results);
+        let s: f64 = results.lock().unwrap().iter().sum();
+        assert!(s > 0.0 && s < N as f64);
+    }
 }

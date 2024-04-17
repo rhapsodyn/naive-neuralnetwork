@@ -211,18 +211,25 @@ impl IdxData {
     }
 }
 
-#[test]
-fn test_load_image() {
-    use crate::common::IMG_RESOLUTION;
-    let imgs = ImageSet::loads("data/train-images-idx3-ubyte");
-    assert_eq!(imgs.len, 60000);
-    let i0 = imgs.iter().next().unwrap();
-    assert_eq!(i0.data.len(), IMG_RESOLUTION);
-    assert_eq!(i0.width * i0.height, IMG_RESOLUTION);
-}
+#[cfg(test)]
+mod tests {
+    use crate::{
+        common::IMG_RESOLUTION,
+        idx::{ImageSet, LabelSet},
+    };
 
-#[test]
-fn test_load_labels() {
-    let ls = LabelSet::loads("data/train-labels-idx1-ubyte");
-    assert_eq!(ls.len(), 60000);
+    #[test]
+    fn test_load_image() {
+        let imgs = ImageSet::loads("data/t10k-images-idx3-ubyte");
+        assert_eq!(imgs.len, 10000);
+        let i0 = imgs.iter().next().unwrap();
+        assert_eq!(i0.data.len(), IMG_RESOLUTION);
+        assert_eq!(i0.width * i0.height, IMG_RESOLUTION);
+    }
+
+    #[test]
+    fn test_load_labels() {
+        let ls = LabelSet::loads("data/t10k-labels-idx1-ubyte");
+        assert_eq!(ls.len(), 10000);
+    }
 }
